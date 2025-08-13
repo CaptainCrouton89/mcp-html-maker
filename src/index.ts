@@ -1,96 +1,58 @@
 #!/usr/bin/env node
 
+import { createOpenAI } from "@ai-sdk/openai";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { generateText } from "ai";
+import { mkdirSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { z } from "zod";
-// Create the MCP server
+
 const server = new McpServer({
-  name: "hello-world",
+  name: "mcp-html-maker",
   version: "1.0.0",
 });
 
-// Tool: Store conversation with embeddings
 server.tool(
-  "hello-world",
-  "Say hello to the user",
+  "make-html-page",
+  "Generate an HTML page using GPT-5 and save it to a file path",
   {
-    name: z.string().describe("The name of the user"),
+    description: z
+      .string()
+      .describe("A detailed description of the HTML page to generate"),
+    filePath: z
+      .string()
+      .describe("Absolute file path where the HTML should be saved"),
   },
-  async ({ name }) => {
-    const response = `Hello ${name}`;
+  async ({ description, filePath }) => {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is required");
+    }
+
+    const openai = createOpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const { text } = await generateText({
+      model: openai("gpt-5"),
+      prompt: `
+Generate complete, valid HTML code for a 1080x720pxwebpage based on this description: 
+
+${description}
+
+Return ONLY the HTML code, no explanations or markdown formatting. The HTML should be complete and ready to save as a .html file.`,
+    });
+
+    const dir = dirname(filePath);
+    mkdirSync(dir, { recursive: true });
+
+    writeFileSync(filePath, text, "utf8");
 
     return {
       content: [
         {
           type: "text",
-          text: response,
-        },
-      ],
-    };
-  }
-);
-
-server.tool(
-  "get-mcp-docs",
-  "Make an MCP server",
-  {
-    name: z.string().describe("The name of the MCP server"),
-  },
-  async ({ name }) => {
-    const response = `
-# Main file for the MCP server
-
-\`\`\`ts
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-// Create the MCP server
-const server = new McpServer({
-  name: "hello-world",
-  version: "1.0.0",
-});
-
-// Tool: Store conversation with embeddings
-server.tool(
-  "hello-world",
-  "Say hello to the user",
-  {
-    name: z.string().describe("The name of the user"),
-  },
-  async ({ name }) => {
-    const response = \`Hello ${name}\`;
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: response,
-        },
-      ],
-    };
-  }
-);
-
-// Start the server
-async function main() {
-  try {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("MCP Hello World Server running...");
-  } catch (error) {
-    console.error("Error starting server:", error);
-    process.exit(1);
-  }
-}
-
-main().catch(console.error);
-\`\`\`
-`;
-    return {
-      content: [
-        {
-          type: "text",
-          text: response,
+          text: `Success: HTML page generated and saved to ${filePath}`,
         },
       ],
     };
